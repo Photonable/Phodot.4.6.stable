@@ -36,8 +36,9 @@
 #include "core/templates/hash_set.h"
 #include "core/templates/list.h"
 
-// Godot's packed file magic header ("GDPC" in ASCII).
-#define PACK_HEADER_MAGIC 0x43504447
+// Godot's packed file magic header
+// Little-endian hex string for 'PHTN'
+#define PACK_HEADER_MAGIC 0x5048544E
 
 #define PACK_FORMAT_VERSION_V2 2
 #define PACK_FORMAT_VERSION_V3 3

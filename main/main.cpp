@@ -61,6 +61,7 @@
 #include "main/performance.h"
 #include "main/splash.gen.h"
 #include "modules/register_module_types.h"
+#include "modules/godotsteam/sdk/public/steam/steam_api.h"
 #include "platform/register_platform_apis.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
@@ -1018,6 +1019,54 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		OS::get_singleton()->set_cwd(new_cwd);
 	}
 #endif
+
+// =================================================================
+// CUSTOM NATIVE SECURITY LAYER: ENGINE-LEVEL STEAMWORKS LOCKDOWN
+// =================================================================
+// 1. Define your real Steam App ID (Replace 480 with your actual Steam App ID)
+const uint32_t SECURE_STEAM_APP_ID = 480; 
+
+// 2. Force a restart through Steam if launched directly via the naked .exe
+if (SteamAPI_RestartAppIfNecessary(SECURE_STEAM_APP_ID)) {
+    return ERR_UNAUTHORIZED; 
+}
+
+// 3. Initialize the core Steamworks API
+if (!SteamAPI_Init()) {
+    // Steam client is closed, or a low-tier emulator failed to respond. Halt immediately.
+    return ERR_UNAUTHORIZED;
+}
+
+// 4. Verify explicit ownership of this App ID against the active account
+if (SteamApps() == nullptr || !SteamApps()->BIsSubscribedApp(SECURE_STEAM_APP_ID)) {
+    SteamAPI_Shutdown();
+    return ERR_UNAUTHORIZED;
+}
+
+#ifdef WINDOWS_ENABLED
+// 5. ANTI-EMULATOR CHECK: Standard pirate emulators replace 'steam_api64.dll'.
+// We check if the file properties match the real cryptographic signature of Valve.
+DWORD info_handle = 0;
+DWORD info_size = GetFileVersionInfoSizeA("steam_api64.dll", &info_handle);
+if (info_size > 0) {
+    Vector<BYTE> version_data;
+    version_data.resize(info_size);
+    if (GetFileVersionInfoA("steam_api64.dll", info_handle, info_size, version_data.ptrw())) {
+        char *company_name = nullptr;
+        UINT company_name_len = 0;
+        // Query the core file description table for the original manufacturer
+        if (VerQueryValueA(version_data.ptr(), "\\StringFileInfo\\040904b0\\CompanyName", (LPVOID*)&company_name, &company_name_len)) {
+            String company(company_name);
+            if (company != "Valve Corporation") {
+                // An emulator DLL is spoofing identity strings. Terminate execution.
+                SteamAPI_Shutdown();
+                return ERR_UNAUTHORIZED;
+            }
+        }
+    }
+}
+#endif
+// =================================================================
 
 	// Benchmark tracking must be done after `OS::get_singleton()->initialize()` as on some
 	// platforms, it's used to set up the time utilities.
